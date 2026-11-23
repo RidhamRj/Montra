@@ -15,7 +15,9 @@ class BankSmsParser : UpiAppParser {
         "com.truecaller",
         "com.dreamplug.androidapp",
         "in.org.npci.upiapp",
-        "in.amazon.mShop.android.shopping"
+        "in.amazon.mShop.android.shopping",
+        "com.canarabank.mobility",
+        "com.canarabank.canaramobilebanking"
     )
 
     override fun canParse(pkg: String): Boolean {

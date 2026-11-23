@@ -76,7 +76,7 @@ class UpiNotificationListenerService : NotificationListenerService() {
         val combined = "$title $fullText".lowercase()
         val hasFinancialKeywords = combined.contains("rs") || combined.contains("inr") || combined.contains("₹") ||
                 combined.contains("debited") || combined.contains("credited") || combined.contains("paid") ||
-                combined.contains("received") || combined.contains("upi")
+                combined.contains("received") || combined.contains("upi") || combined.contains("dr.") || combined.contains("cr.")
 
         if (parser == null && hasFinancialKeywords) {
             parser = parsers.firstOrNull { it is BankSmsParser }

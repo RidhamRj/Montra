@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingWorkPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
@@ -122,7 +122,7 @@ class SyncWorker(
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.KEEP,
                 periodicRequest
             )
         }

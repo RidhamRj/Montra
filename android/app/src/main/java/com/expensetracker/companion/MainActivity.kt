@@ -32,21 +32,55 @@ import java.util.*
 
 class MainActivity : ComponentActivity() {
 
+    private val isPermissionGrantedState = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Schedule periodic background sync
         SyncWorker.schedulePeriodic(this)
 
+        checkPermission()
+
         setContent {
-            ExpenseTrackerApp()
+            ExpenseTrackerApp(
+                isPermissionGranted = isPermissionGrantedState.value,
+                onRefreshPermission = { checkPermission() }
+            )
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        checkPermission()
+    }
+
+    private fun checkPermission() {
+        isPermissionGrantedState.value = isNotificationAccessGranted(this)
+    }
+}
+
+fun isNotificationAccessGranted(context: android.content.Context): Boolean {
+    val pkgName = context.packageName
+    val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: ""
+    if (flat.isNotEmpty()) {
+        val names = flat.split(":")
+        for (name in names) {
+            val cn = android.content.ComponentName.unflattenFromString(name)
+            if (cn != null && cn.packageName == pkgName) {
+                return true
+            }
+        }
+    }
+    return NotificationManagerCompat.getEnabledListenerPackages(context).contains(pkgName)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExpenseTrackerApp() {
+fun ExpenseTrackerApp(
+    isPermissionGranted: Boolean,
+    onRefreshPermission: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val db = remember { ExpenseDatabase.getDatabase(context) }
@@ -57,9 +91,6 @@ fun ExpenseTrackerApp() {
     val pendingCount by dao.getPendingReviewCount().collectAsState(initial = 0)
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    var isPermissionGranted by remember {
-        mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName))
-    }
 
     val totalIncomePaise = transactions.filter { it.type == "income" && it.reviewStatus == "confirmed" }.sumOf { it.amountPaise }
     val totalExpensePaise = transactions.filter { it.type == "expense" && it.reviewStatus == "confirmed" }.sumOf { it.amountPaise }
@@ -129,7 +160,8 @@ fun ExpenseTrackerApp() {
                     isPermissionGranted = isPermissionGranted,
                     onOpenSettings = {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }
+                    },
+                    onRefreshPermission = onRefreshPermission
                 )
                 1 -> UpiReviewScreen(
                     pendingList = pendingTransactions,
@@ -145,6 +177,7 @@ fun ExpenseTrackerApp() {
                     onGrantPermission = {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
+                    onRefreshPermission = onRefreshPermission,
                     onTriggerTestUpi = {
                         scope.launch {
                             val testEntity = TransactionEntity(
@@ -177,7 +210,8 @@ fun DashboardScreen(
     balancePaise: Long,
     transactions: List<TransactionEntity>,
     isPermissionGranted: Boolean,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onRefreshPermission: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -199,16 +233,21 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Allow notification access to auto-detect PhonePe, Google Pay, and Paytm transactions.",
+                            "Allow notification access to auto-detect PhonePe, Google Pay, and Paytm transactions.\n\nNote for Android 13/14/15: If the toggle is greyed out, open App Info > 3 dots (⋮) > Allow restricted settings.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = onOpenSettings,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Text("Enable Access")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onOpenSettings,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Enable Access")
+                            }
+                            OutlinedButton(onClick = onRefreshPermission) {
+                                Text("Refresh Status")
+                            }
                         }
                     }
                 }
@@ -402,6 +441,7 @@ fun UpiReviewScreen(
 fun SettingsScreen(
     isPermissionGranted: Boolean,
     onGrantPermission: () -> Unit,
+    onRefreshPermission: () -> Unit,
     onTriggerTestUpi: () -> Unit
 ) {
     Column(
@@ -423,8 +463,15 @@ fun SettingsScreen(
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = onGrantPermission) {
-                    Text(if (isPermissionGranted) "Manage Permissions" else "Grant Permission")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onGrantPermission) {
+                        Text(if (isPermissionGranted) "Manage Permissions" else "Grant Permission")
+                    }
+                    if (!isPermissionGranted) {
+                        OutlinedButton(onClick = onRefreshPermission) {
+                            Text("Refresh Status")
+                        }
+                    }
                 }
             }
         }

@@ -1,5 +1,6 @@
-# Treat jar files as binary
+# Treat binary files
 *.jar binary
+*.keystore binary
 android/gradlew text eol=lf
 android/gradlew.bat text eol=crlf
 

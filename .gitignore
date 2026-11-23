@@ -33,6 +33,7 @@ android/.idea/
 android/*.iml
 *.apk
 *.aab
+android-build-apk/
 
 # Editor & OS files
 .vscode/

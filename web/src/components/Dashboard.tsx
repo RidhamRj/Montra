@@ -430,13 +430,15 @@ export function Dashboard({
                     {(category?.name ?? "U").charAt(0).toUpperCase()}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-800">
-                      {transaction.partyName ||
-                        transaction.description ||
-                        category?.name ||
-                        "Transaction"}
+                    <p className="truncate text-sm font-semibold text-slate-800">
+                      {transaction.partyName || category?.name || "Transaction"}
                     </p>
-                    <p className="truncate text-xs text-slate-500">
+                    {transaction.description && (
+                      <p className="truncate text-xs text-slate-600 font-mono">
+                        {transaction.description}
+                      </p>
+                    )}
+                    <p className="truncate text-[11px] text-slate-400">
                       {category?.name ?? "Uncategorized"} ·{" "}
                       {formatDate(transaction.occurredAt)}
                     </p>

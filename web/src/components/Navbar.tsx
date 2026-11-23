@@ -5,6 +5,7 @@ import {
   PieChart,
   Plus,
   RefreshCw,
+  Settings,
   Wallet,
   Wifi,
   WifiOff,
@@ -26,6 +27,7 @@ interface NavbarProps {
   syncing?: boolean;
   onSync: () => void;
   lastSyncedAt?: string | null;
+  onOpenSettings?: () => void;
 }
 
 const tabs = [
@@ -41,9 +43,10 @@ function SyncControls({
   syncing,
   onSync,
   lastSyncedAt,
+  onOpenSettings,
 }: Pick<
   NavbarProps,
-  "isOnline" | "syncing" | "onSync" | "lastSyncedAt"
+  "isOnline" | "syncing" | "onSync" | "lastSyncedAt" | "onOpenSettings"
 >) {
   return (
     <>
@@ -69,6 +72,17 @@ function SyncControls({
         />
         {syncing ? "Syncing..." : "Sync"}
       </button>
+      {onOpenSettings && (
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          title="Cloud Sync & Settings"
+          aria-label="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+      )}
     </>
   );
 }
@@ -81,6 +95,7 @@ export function Navbar({
   syncing = false,
   onSync,
   lastSyncedAt,
+  onOpenSettings,
 }: NavbarProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -106,6 +121,7 @@ export function Navbar({
               syncing={syncing}
               onSync={onSync}
               lastSyncedAt={lastSyncedAt}
+              onOpenSettings={onOpenSettings}
             />
           </div>
         </div>
@@ -148,6 +164,7 @@ export function Navbar({
             syncing={syncing}
             onSync={onSync}
             lastSyncedAt={lastSyncedAt}
+            onOpenSettings={onOpenSettings}
           />
         </div>
       </div>

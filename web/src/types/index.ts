@@ -7,7 +7,8 @@ export type TransactionSource =
   | "phonepe"
   | "gpay"
   | "paytm"
-  | "bank";
+  | "bank"
+  | "bank_sms";
 
 export type ReviewStatus = "pending" | "confirmed" | "rejected";
 

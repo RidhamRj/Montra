@@ -1,16 +1,52 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
+export function getStoredSupabaseConfig(): { url: string; key: string } {
+  if (typeof window === "undefined") {
+    return {
+      url: import.meta.env.VITE_SUPABASE_URL || "https://oqnlyzdxmtghvmhljrik.supabase.co",
+      key: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+    };
+  }
+  const storedUrl = localStorage.getItem("rupeetrack_supabase_url");
+  const storedKey = localStorage.getItem("rupeetrack_supabase_anon_key");
+  return {
+    url: storedUrl || import.meta.env.VITE_SUPABASE_URL || "https://oqnlyzdxmtghvmhljrik.supabase.co",
+    key: storedKey || import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+  };
+}
 
-export const supabaseAnonKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || "placeholder-anon-key";
+export function saveStoredSupabaseConfig(url: string, key: string) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("rupeetrack_supabase_url", url.trim());
+    localStorage.setItem("rupeetrack_supabase_anon_key", key.trim());
+  }
+  initSupabaseClient();
+}
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+let clientInstance: SupabaseClient | null = null;
+
+export function initSupabaseClient(): SupabaseClient {
+  const { url, key } = getStoredSupabaseConfig();
+  const validUrl = url && url.startsWith("http") ? url : "https://placeholder.supabase.co";
+  const validKey = key || "placeholder-anon-key";
+
+  clientInstance = createClient(validUrl, validKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+  return clientInstance;
+}
+
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    if (!clientInstance) {
+      initSupabaseClient();
+    }
+    const val = (clientInstance as any)[prop];
+    return typeof val === "function" ? val.bind(clientInstance) : val;
   },
 });
 

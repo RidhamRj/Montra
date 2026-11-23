@@ -31,6 +31,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.expensetracker.companion.data.local.ExpenseDatabase
 import com.expensetracker.companion.data.local.TransactionEntity
 import com.expensetracker.companion.service.UpiNotificationListenerService
+import com.expensetracker.companion.sync.SyncPreferences
 import com.expensetracker.companion.sync.SyncWorker
 import com.expensetracker.companion.util.NotificationDebugLog
 import kotlinx.coroutines.launch
@@ -206,18 +207,18 @@ fun ExpenseTrackerApp(
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                     onRefreshPermission = onRefreshPermission,
-                    onTriggerTestUpi = {
+                    onTriggerTestUpi = { type, amountPaise, party, desc, source ->
                         scope.launch {
                             val testEntity = TransactionEntity(
                                 id = UUID.randomUUID().toString(),
                                 userId = "default-user",
-                                amountPaise = 24900, // ₹249.00
-                                type = "expense",
-                                categoryId = "cat-food",
-                                description = "Simulated PhonePe Payment",
-                                partyName = "Swiggy / Instamart",
+                                amountPaise = amountPaise,
+                                type = type,
+                                categoryId = if (type == "expense") "cat-food" else "cat-other-inc",
+                                description = desc,
+                                partyName = party,
                                 paymentMethod = "upi",
-                                source = "phonepe",
+                                source = source,
                                 externalReference = "UPI" + (100000000000L..999999999999L).random(),
                                 reviewStatus = "pending",
                                 syncStatus = "pending"
@@ -345,7 +346,7 @@ fun TransactionRow(tx: TransactionEntity) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -355,17 +356,33 @@ fun TransactionRow(tx: TransactionEntity) {
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(tx.partyName ?: tx.description.ifEmpty { "Transaction" }, fontWeight = FontWeight.SemiBold)
+                Text(
+                    tx.partyName ?: if (tx.type == "income") "Received via UPI" else "Payment via UPI",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+                if (tx.description.isNotBlank()) {
+                    Text(
+                        tx.description,
+                        fontSize = 11.sp,
+                        color = Color.DarkGray,
+                        maxLines = 2,
+                        lineHeight = 14.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(tx.source.uppercase(), fontSize = 11.sp, color = Color.Gray)
+                    Text(tx.source.uppercase(), fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     if (tx.reviewStatus == "pending") {
-                        Text("• PENDING REVIEW", fontSize = 11.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                        Text("• PENDING REVIEW", fontSize = 10.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
                     }
                 }
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 (if (tx.type == "expense") "- " else "+ ") + formatPaiseToInr(tx.amountPaise),
                 fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
                 color = if (tx.type == "expense") Color(0xFFEF4444) else Color(0xFF10B981)
             )
         }
@@ -428,7 +445,7 @@ fun UpiReviewScreen(
                                 fontSize = 12.sp
                             )
                             Text(
-                                formatPaiseToInr(tx.amountPaise),
+                                (if (tx.type == "expense") "- " else "+ ") + formatPaiseToInr(tx.amountPaise),
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 20.sp,
                                 color = if (tx.type == "expense") Color(0xFFEF4444) else Color(0xFF10B981)
@@ -436,7 +453,24 @@ fun UpiReviewScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(tx.partyName ?: "Merchant / Recipient", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        
+                        // Full raw SMS / notification text quote
+                        if (tx.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text("Detected Message / Reason:", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                                    Text(tx.description, fontSize = 12.sp, color = Color.DarkGray, lineHeight = 16.sp)
+                                }
+                            }
+                        }
+
                         if (!tx.externalReference.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text("UPI Ref: ${tx.externalReference}", fontSize = 11.sp, color = Color.Gray)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -470,10 +504,14 @@ fun SettingsScreen(
     isPermissionGranted: Boolean,
     onGrantPermission: () -> Unit,
     onRefreshPermission: () -> Unit,
-    onTriggerTestUpi: () -> Unit
+    onTriggerTestUpi: (type: String, amountPaise: Long, party: String, desc: String, source: String) -> Unit
 ) {
     val context = LocalContext.current
     val isConnected by NotificationDebugLog.isServiceConnected
+
+    var supabaseUrlText by remember { mutableStateOf(SyncPreferences.getSupabaseUrl(context)) }
+    var supabaseAnonKeyText by remember { mutableStateOf(SyncPreferences.getSupabaseAnonKey(context)) }
+    var syncStatusText by remember { mutableStateOf(SyncPreferences.getLastSyncStatus(context)) }
 
     Column(
         modifier = Modifier
@@ -484,7 +522,63 @@ fun SettingsScreen(
     ) {
         Text("Companion Settings & Diagnostics", fontWeight = FontWeight.Bold, fontSize = 20.sp)
 
-        // 1. Service Connection Status
+        // 1. Supabase Cloud Sync Configuration
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Supabase Cloud Sync", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Sync transactions from this phone to your Montra Vercel dashboard via Supabase.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = supabaseUrlText,
+                    onValueChange = { supabaseUrlText = it },
+                    label = { Text("Supabase Project URL") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = supabaseAnonKeyText,
+                    onValueChange = { supabaseAnonKeyText = it },
+                    label = { Text("Supabase Anon Key (public API key)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    "Status: $syncStatusText",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (syncStatusText.contains("Successfully")) Color(0xFF10B981) else Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            SyncPreferences.setSupabaseUrl(context, supabaseUrlText)
+                            SyncPreferences.setSupabaseAnonKey(context, supabaseAnonKeyText)
+                            SyncWorker.enqueue(context)
+                            syncStatusText = "Sync triggered in background..."
+                        }
+                    ) {
+                        Text("Save & Sync Now")
+                    }
+                }
+            }
+        }
+
+        // 2. Service Connection Status
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(
@@ -533,13 +627,13 @@ fun SettingsScreen(
             }
         }
 
-        // 2. Battery Optimization
+        // 3. Battery Optimization
         Card(shape = RoundedCornerShape(12.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Background Battery Protection", fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Set battery usage to 'Unrestricted' so Android (Samsung/Xiaomi/OnePlus) doesn't kill the listener when the app is in the background.",
+                    "Set battery usage to 'Unrestricted' so Android doesn't kill the listener when the app is in the background.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
@@ -560,7 +654,7 @@ fun SettingsScreen(
             }
         }
 
-        // 3. Live Notification Sniffer
+        // 4. Live Notification Sniffer
         Card(shape = RoundedCornerShape(12.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -621,19 +715,77 @@ fun SettingsScreen(
             }
         }
 
-        // 4. Test Simulation
+        // 5. Test Simulation Buttons
         Card(shape = RoundedCornerShape(12.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Simulate UPI Payment", fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Simulate Live Payments & SMS", fontWeight = FontWeight.Bold)
                 Text(
-                    "Test database insertion, review drawer, and cloud sync without real money.",
+                    "Test parser, database insertion, and reason display without spending real money.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = onTriggerTestUpi) {
-                    Text("Trigger Simulated PhonePe Payment (₹249)")
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Button(
+                    onClick = {
+                        onTriggerTestUpi(
+                            "expense",
+                            100, // ₹1.00
+                            "Yash Singha",
+                            "Dear Customer, Acct XXXXX30170 Dr. INR 1.00 on 23/11/26 to Yash Singha; UPI: 669283942258; Bal INR 5,824.81.Not you?SMS BLOCKUPI to 9901771222-CanaraBank",
+                            "bank_sms"
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Canara Bank: Dr. ₹1.00 to Yash Singha")
+                }
+
+                Button(
+                    onClick = {
+                        onTriggerTestUpi(
+                            "expense",
+                            5000, // ₹50.00
+                            "Swiggy",
+                            "Rs.50 debited by UPI Swiggy",
+                            "bank_sms"
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("SMS: Rs.50 debited by UPI Swiggy")
+                }
+
+                Button(
+                    onClick = {
+                        onTriggerTestUpi(
+                            "income",
+                            5000, // ₹50.00
+                            "Papa",
+                            "Rs. 50 credited by UPI Papa",
+                            "bank_sms"
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
+                    Text("SMS: Rs.50 credited by UPI Papa")
+                }
+
+                Button(
+                    onClick = {
+                        onTriggerTestUpi(
+                            "income",
+                            18000, // ₹180.00
+                            "AKASH KUMAR",
+                            "AKASH KUMAR has sent ₹180 to your bank account Canara Bank-0170",
+                            "phonepe"
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+                ) {
+                    Text("PhonePe: Received ₹180 from AKASH KUMAR")
                 }
             }
         }
@@ -641,8 +793,8 @@ fun SettingsScreen(
 }
 
 fun formatPaiseToInr(paise: Long): String {
-  val rupees = paise / 100.0
-  val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-  return format.format(rupees)
+    val rupees = paise / 100.0
+    val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+    return format.format(rupees)
 }
 

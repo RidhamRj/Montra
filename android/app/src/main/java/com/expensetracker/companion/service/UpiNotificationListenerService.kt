@@ -126,13 +126,35 @@ class UpiNotificationListenerService : NotificationListenerService() {
                 }
             }
 
+            val initialCategory = if (parsed.type == "expense") {
+                val checkText = "${parsed.partyName.orEmpty()} $fullText".lowercase()
+                when {
+                    checkText.contains("swiggy") || checkText.contains("zomato") || checkText.contains("eat") ||
+                    checkText.contains("cafe") || checkText.contains("restaurant") || checkText.contains("food") ||
+                    checkText.contains("starbucks") || checkText.contains("mcdonald") -> "cat-food"
+
+                    checkText.contains("amazon") || checkText.contains("flipkart") || checkText.contains("myntra") ||
+                    checkText.contains("blinkit") || checkText.contains("zepto") || checkText.contains("instamart") -> "cat-shopping"
+
+                    checkText.contains("airtel") || checkText.contains("jio") || checkText.contains("electricity") ||
+                    checkText.contains("bescom") || checkText.contains("bill") || checkText.contains("recharge") -> "cat-utilities"
+
+                    checkText.contains("uber") || checkText.contains("ola") || checkText.contains("rapido") ||
+                    checkText.contains("metro") || checkText.contains("fuel") || checkText.contains("petrol") -> "cat-transport"
+
+                    else -> "cat-food"
+                }
+            } else {
+                "cat-other-inc"
+            }
+
             val entity = TransactionEntity(
                 id = UUID.randomUUID().toString(),
                 userId = "default-user",
                 amountPaise = parsed.amountPaise,
                 type = parsed.type,
-                categoryId = if (parsed.type == "expense") "cat-food" else "cat-other-inc",
-                description = "Auto-detected from ${parsed.source.uppercase()}",
+                categoryId = initialCategory,
+                description = fullText.trim(), // PRESERVE FULL RAW NOTIFICATION / SMS TEXT!
                 partyName = parsed.partyName,
                 paymentMethod = "upi",
                 source = parsed.source,

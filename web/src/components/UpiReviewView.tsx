@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   Loader2,
   RefreshCw,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useCategories } from "../hooks/useCategories";
@@ -11,7 +12,12 @@ import {
   confirmTransaction,
   getPendingReviewTransactions,
   rejectTransaction,
+  updateTransaction,
 } from "../services/transactionService";
+import {
+  categorizeWithGemini,
+  autoEnrichPendingTransactions,
+} from "../services/geminiService";
 import type { Transaction, TransactionSource } from "../types";
 import { formatDate, formatINR } from "../utils/formatters";
 
@@ -26,6 +32,7 @@ const sourceLabels: Record<TransactionSource, string> = {
   gpay: "Google Pay",
   paytm: "Paytm",
   bank: "Bank",
+  bank_sms: "Bank SMS",
 };
 
 export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
@@ -33,6 +40,8 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
   const [pending, setPending] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichSuccess, setEnrichSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -51,7 +60,7 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Unable to load pending transactions",
+              : "Unable to load pending transactions"
           );
         }
       } finally {
@@ -68,7 +77,7 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
 
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
-    [categories],
+    [categories]
   );
 
   async function handleAction(id: string, action: "confirm" | "reject") {
@@ -83,17 +92,71 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
       }
 
       setPending((current) =>
-        current.filter((transaction) => transaction.id !== id),
+        current.filter((transaction) => transaction.id !== id)
       );
       onReviewed?.();
     } catch (actionError) {
       setError(
         actionError instanceof Error
           ? actionError.message
-          : "Unable to update transaction",
+          : "Unable to update transaction"
       );
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleAiSuggest(tx: Transaction) {
+    setBusyId(tx.id);
+    try {
+      const result = await categorizeWithGemini(
+        tx.description,
+        tx.partyName,
+        tx.type
+      );
+      await updateTransaction(tx.id, {
+        partyName: result.merchant,
+        categoryId: result.categoryId,
+      });
+      setPending((current) =>
+        current.map((item) =>
+          item.id === tx.id
+            ? { ...item, partyName: result.merchant, categoryId: result.categoryId }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error("AI Categorization error:", err);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleAutoEnrichAll() {
+    setEnriching(true);
+    setEnrichSuccess(null);
+    try {
+      const count = await autoEnrichPendingTransactions(pending);
+      setEnrichSuccess(`✨ Successfully enriched ${count} transaction${count === 1 ? "" : "s"} with AI!`);
+      setReloadKey((k) => k + 1);
+      setTimeout(() => setEnrichSuccess(null), 3500);
+    } catch (err) {
+      setError("AI auto-enrichment encountered an error");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  async function handleCategoryChange(txId: string, newCategoryId: string) {
+    try {
+      await updateTransaction(txId, { categoryId: newCategoryId });
+      setPending((current) =>
+        current.map((item) =>
+          item.id === txId ? { ...item, categoryId: newCategoryId } : item
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update category:", err);
     }
   }
 
@@ -109,23 +172,42 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
             for confirmation
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReloadKey((key) => key + 1)}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {pending.length > 0 && (
+            <button
+              type="button"
+              onClick={handleAutoEnrichAll}
+              disabled={enriching || loading}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-purple-700 disabled:opacity-50"
+            >
+              <Sparkles className={`h-3.5 w-3.5 ${enriching ? "animate-spin" : ""}`} />
+              {enriching ? "Analyzing with AI..." : "✨ AI Auto-Enrich All"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {enrichSuccess && (
+        <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 text-xs font-medium text-purple-900">
+          {enrichSuccess}
+        </div>
+      )}
 
       <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
         <p className="text-xs font-medium text-indigo-900">
           Auto-detected UPI payments stay in review until you confirm or reject
-          them.
+          them. The full SMS/notification message is preserved below each entry.
         </p>
       </div>
 
@@ -152,7 +234,7 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
           </p>
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-4">
           {pending.map((transaction) => {
             const category = categoryById.get(transaction.categoryId);
             const isIncome = transaction.type === "income";
@@ -164,49 +246,82 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
+                  <div className="flex min-w-0 gap-3 flex-1">
                     <span
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xs font-bold text-white"
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xs font-bold text-white mt-1"
                       style={{ backgroundColor: category?.color ?? "#94a3b8" }}
                     >
                       {(category?.name ?? "U").charAt(0).toUpperCase()}
                     </span>
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-slate-900">
-                          {transaction.partyName ||
-                            transaction.description ||
-                            "UPI transaction"}
+                        <p className="text-base font-semibold text-slate-900">
+                          {transaction.partyName || "Merchant / Recipient"}
                         </p>
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                          {sourceLabels[transaction.source]}
+                          {sourceLabels[transaction.source] || transaction.source}
+                        </span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                          PENDING
                         </span>
                       </div>
 
-                      <p className="mt-1 text-xs text-slate-500">
-                        {category?.name ?? "Uncategorized"} ·{" "}
-                        {formatDate(transaction.occurredAt)} ·{" "}
-                        {transaction.paymentMethod.toUpperCase()}
-                      </p>
-
-                      {transaction.partyName && transaction.description && (
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-600">
-                          {transaction.description}
-                        </p>
+                      {/* Detected SMS / Notification Message Quote Box */}
+                      {transaction.description && (
+                        <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Raw Message / Reason:
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-700 leading-relaxed font-mono">
+                            {transaction.description}
+                          </p>
+                        </div>
                       )}
 
-                      {transaction.externalReference && (
-                        <p className="mt-1 break-all text-[10px] font-mono text-slate-400">
-                          Ref: {transaction.externalReference}
-                        </p>
-                      )}
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        {/* Category Selector */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-500">Category:</span>
+                          <select
+                            value={transaction.categoryId}
+                            onChange={(e) => handleCategoryChange(transaction.id, e.target.value)}
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-500 focus:outline-hidden"
+                          >
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* AI Auto-Suggest Per Item */}
+                        <button
+                          type="button"
+                          onClick={() => handleAiSuggest(transaction)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-600 hover:text-purple-700 disabled:opacity-50"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          AI Suggest
+                        </button>
+
+                        {transaction.externalReference && (
+                          <span className="text-[10px] font-mono text-slate-400">
+                            Ref: {transaction.externalReference}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-400">
+                          {formatDate(transaction.occurredAt)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                     <span
-                      className={`text-base font-semibold ${
+                      className={`text-lg font-bold ${
                         isIncome ? "text-emerald-600" : "text-rose-600"
                       }`}
                     >
@@ -219,7 +334,7 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
                         type="button"
                         onClick={() => handleAction(transaction.id, "reject")}
                         disabled={busy}
-                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
                       >
                         {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -232,7 +347,7 @@ export function UpiReviewView({ userId, onReviewed }: UpiReviewViewProps) {
                         type="button"
                         onClick={() => handleAction(transaction.id, "confirm")}
                         disabled={busy}
-                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-50"
                       >
                         {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />

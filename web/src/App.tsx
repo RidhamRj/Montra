@@ -5,6 +5,7 @@ import { TransactionList } from "./components/TransactionList";
 import { AddTransactionModal } from "./components/AddTransactionModal";
 import { UpiReviewView } from "./components/UpiReviewView";
 import { AnalyticsView } from "./components/AnalyticsView";
+import { SettingsModal } from "./components/SettingsModal";
 import { db } from "./db/expenseDb";
 import { syncNow, isOnline } from "./services/syncService";
 import { ensureDefaultCategories } from "./services/categoryService";
@@ -14,6 +15,7 @@ const USER_ID = "local-user";
 export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [onlineStatus, setOnlineStatus] = useState<boolean>(isOnline());
   const [syncing, setSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -100,6 +102,7 @@ export function App() {
         syncing={syncing}
         onSync={handleSync}
         lastSyncedAt={lastSyncedAt}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
@@ -148,6 +151,12 @@ export function App() {
           refreshPendingCount();
           setRefreshTrigger((prev) => prev + 1);
         }}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSyncCompleted={handleSync}
       />
     </div>
   );

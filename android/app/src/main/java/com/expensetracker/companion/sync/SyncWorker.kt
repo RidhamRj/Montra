@@ -13,9 +13,14 @@ import androidx.work.WorkerParameters
 import com.expensetracker.companion.data.local.ExpenseDatabase
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(
@@ -29,22 +34,25 @@ class SyncWorker(
         val pendingList = dao.getPendingSyncTransactions()
 
         if (pendingList.isEmpty()) {
+            SyncPreferences.setLastSyncStatus(applicationContext, "All local transactions already synced")
             return Result.success()
         }
 
         Log.d(TAG, "Starting sync for ${pendingList.size} pending transactions...")
 
-        val supabaseUrl = "https://your-supabase-project.supabase.co"
-        val supabaseAnonKey = "your-supabase-anon-key"
+        val supabaseUrl = SyncPreferences.getSupabaseUrl(applicationContext)
+        val supabaseAnonKey = SyncPreferences.getSupabaseAnonKey(applicationContext)
 
-        // If placeholders are present, preserve local pending state safely
-        if (supabaseUrl.contains("your-supabase-project")) {
-            Log.d(TAG, "Supabase credentials not configured yet. Retaining ${pendingList.size} local records safely.")
+        if (supabaseAnonKey.isBlank() || supabaseUrl.contains("your-supabase-project")) {
+            val msg = "Supabase API key not configured. Retaining ${pendingList.size} local records safely."
+            Log.d(TAG, msg)
+            SyncPreferences.setLastSyncStatus(applicationContext, "Setup Needed: Enter Supabase Anon Key in Settings")
             return Result.success()
         }
 
         try {
-            val url = URL("$supabaseUrl/rest/v1/transactions")
+            val cleanBaseUrl = supabaseUrl.trimEnd('/')
+            val url = URL("$cleanBaseUrl/rest/v1/transactions")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
@@ -69,7 +77,9 @@ class SyncWorker(
                     put("payment_method", item.paymentMethod)
                     put("source", item.source)
                     put("external_reference", item.externalReference)
-                    put("occurred_at", item.occurredAt)
+                    put("occurred_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                        timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    }.format(Date(item.occurredAt)))
                     put("review_status", item.reviewStatus)
                 }
                 jsonArray.put(obj)
@@ -83,14 +93,26 @@ class SyncWorker(
             val responseCode = conn.responseCode
             if (responseCode in 200..299) {
                 dao.markSynced(pendingList.map { it.id })
-                Log.i(TAG, "Successfully synced ${pendingList.size} transactions to Supabase")
+                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                val successMsg = "Successfully synced ${pendingList.size} transactions at $timeStr"
+                Log.i(TAG, successMsg)
+                SyncPreferences.setLastSyncStatus(applicationContext, successMsg)
                 return Result.success()
             } else {
-                Log.w(TAG, "Supabase sync responded with HTTP $responseCode")
+                val errBody = try {
+                    BufferedReader(InputStreamReader(conn.errorStream ?: conn.inputStream)).use { it.readText() }
+                } catch (e: Exception) {
+                    ""
+                }
+                val errMsg = "HTTP $responseCode: ${errBody.take(100)}"
+                Log.w(TAG, "Supabase sync error: $errMsg")
+                SyncPreferences.setLastSyncStatus(applicationContext, "Sync error: $errMsg")
                 return Result.retry()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Sync failed with network error: ${e.message}", e)
+            val netErr = "Network error: ${e.message}"
+            Log.e(TAG, "Sync failed: $netErr", e)
+            SyncPreferences.setLastSyncStatus(applicationContext, netErr)
             return Result.retry()
         }
     }
@@ -128,4 +150,3 @@ class SyncWorker(
         }
     }
 }
-

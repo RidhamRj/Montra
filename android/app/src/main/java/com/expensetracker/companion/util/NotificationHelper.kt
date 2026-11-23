@@ -65,3 +65,4 @@ object NotificationHelper {
         notificationManager.notify(transaction.id.hashCode(), notification)
     }
 }
+

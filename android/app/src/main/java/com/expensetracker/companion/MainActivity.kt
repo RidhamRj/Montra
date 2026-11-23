@@ -1,15 +1,21 @@
 package com.expensetracker.companion
 
+import android.content.ComponentName
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,7 +30,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import com.expensetracker.companion.data.local.ExpenseDatabase
 import com.expensetracker.companion.data.local.TransactionEntity
+import com.expensetracker.companion.service.UpiNotificationListenerService
 import com.expensetracker.companion.sync.SyncWorker
+import com.expensetracker.companion.util.NotificationDebugLog
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -63,6 +71,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkPermission()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isPermissionGrantedState.value) {
+                NotificationListenerService.requestRebind(
+                    ComponentName(this, UpiNotificationListenerService::class.java)
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to rebind service: ${e.message}")
+        }
     }
 
     private fun checkPermission() {
@@ -455,45 +472,163 @@ fun SettingsScreen(
     onRefreshPermission: () -> Unit,
     onTriggerTestUpi: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isConnected by NotificationDebugLog.isServiceConnected
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Companion Settings", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text("Companion Settings & Diagnostics", fontWeight = FontWeight.Bold, fontSize = 20.sp)
 
+        // 1. Service Connection Status
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isConnected) Color(0xFFECFDF5) else Color(0xFFFEF2F2)
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Android Listener Service", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isConnected) "● CONNECTED" else "● DISCONNECTED",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isConnected) Color(0xFF10B981) else Color(0xFFEF4444)
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    if (isConnected) "Service is running in background. Any notification from PhonePe, GPay, Paytm, or SMS will be captured."
+                    else "Android OS has paused or not bound the listener service yet. Tap Rebind below or toggle permission off/on.",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                NotificationListenerService.requestRebind(
+                                    ComponentName(context, UpiNotificationListenerService::class.java)
+                                )
+                            }
+                            onRefreshPermission()
+                        }
+                    ) {
+                        Text("Force Rebind Service")
+                    }
+                    OutlinedButton(onClick = onGrantPermission) {
+                        Text("Open Settings")
+                    }
+                }
+            }
+        }
+
+        // 2. Battery Optimization
         Card(shape = RoundedCornerShape(12.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Notification Access", fontWeight = FontWeight.Bold)
+                Text("Background Battery Protection", fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    if (isPermissionGranted) "Status: ACTIVE (Listening for PhonePe, GPay, Paytm)"
-                    else "Status: DISABLED (Grant access to auto-detect UPI)",
-                    color = if (isPermissionGranted) Color(0xFF10B981) else Color(0xFFEF4444),
-                    fontSize = 13.sp
+                    "Set battery usage to 'Unrestricted' so Android (Samsung/Xiaomi/OnePlus) doesn't kill the listener when the app is in the background.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onGrantPermission) {
-                        Text(if (isPermissionGranted) "Manage Permissions" else "Grant Permission")
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            val intent = Intent(Settings.ACTION_SETTINGS)
+                            context.startActivity(intent)
+                        }
                     }
-                    if (!isPermissionGranted) {
-                        OutlinedButton(onClick = onRefreshPermission) {
-                            Text("Refresh Status")
+                ) {
+                    Text("Check Battery Optimization")
+                }
+            }
+        }
+
+        // 3. Live Notification Sniffer
+        Card(shape = RoundedCornerShape(12.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Live Notification Sniffer", fontWeight = FontWeight.Bold)
+                    Text("${NotificationDebugLog.entries.size} logs", fontSize = 12.sp, color = Color.Gray)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Real-time log of notifications received by your phone. Check here to see exactly what PhonePe/GPay sent.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (NotificationDebugLog.entries.isEmpty()) {
+                    Text(
+                        "No notifications captured yet.\nWhen your phone receives a UPI notification or SMS, it will appear here instantly with full details.",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        lineHeight = 16.sp
+                    )
+                } else {
+                    NotificationDebugLog.entries.take(10).forEach { entry ->
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    entry.packageName.substringAfterLast("."),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(entry.timestamp, fontSize = 10.sp, color = Color.Gray)
+                            }
+                            if (entry.title.isNotBlank()) {
+                                Text("Title: ${entry.title}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("Text: ${entry.text}", fontSize = 11.sp, maxLines = 2)
+                            Text(
+                                "Result: ${entry.result}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (entry.isSuccess) Color(0xFF10B981) else Color(0xFFEF4444)
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(top = 6.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
             }
         }
 
+        // 4. Test Simulation
         Card(shape = RoundedCornerShape(12.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Simulate UPI Payment", fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Simulate an incoming PhonePe payment notification to test detection, deduplication, and the review drawer.",
-                    fontSize = 13.sp,
+                    "Test database insertion, review drawer, and cloud sync without real money.",
+                    fontSize = 12.sp,
                     color = Color.Gray
                 )
                 Spacer(modifier = Modifier.height(12.dp))

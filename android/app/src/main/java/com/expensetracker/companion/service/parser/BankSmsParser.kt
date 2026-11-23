@@ -22,22 +22,22 @@ class BankSmsParser : UpiAppParser {
         return supportedPackages.contains(pkg.lowercase())
     }
 
-    // Debit patterns (supports "debited ... Rs 1", "debited with INR 1", "Rs 1 debited", etc.):
+    // Debit patterns (supports "Dr. INR 1.00", "debited ... Rs 1", "debited with INR 1", "Rs 1 debited", etc.):
     private val debitPatterns = listOf(
-        Pattern.compile("(?:debited|spent|deducted|withdrawn|paid|sent).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:debited|spent|deducted|withdrawn|paid)", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(?:\\bdr\\.?\\s+|debited|spent|deducted|withdrawn|paid|sent).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:\\bdr\\.?\\b|debited|spent|deducted|withdrawn|paid)", Pattern.CASE_INSENSITIVE)
     )
 
-    // Credit patterns (supports "credited ... Rs 50", "credited with INR 50", "Rs 50 credited", etc.):
+    // Credit patterns (supports "Cr. INR 50.00", "credited ... Rs 50", "credited with INR 50", "Rs 50 credited", etc.):
     private val creditPatterns = listOf(
-        Pattern.compile("(?:credited|deposited|received).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:credited|deposited|received)", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(?:\\bcr\\.?\\s+|credited|deposited|received).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:\\bcr\\.?\\b|credited|deposited|received)", Pattern.CASE_INSENSITIVE)
     )
 
     // UPI Ref / UTR
     private val refPattern = Pattern.compile("(?:upi\\s*(?:ref|reference|txn)?(?:\\s*no)?|utr)[:\\s/]*([0-9]{10,14})", Pattern.CASE_INSENSITIVE)
-    // Merchant / Info: "Info: UPI/P2P/Name" or "to/at <Merchant>"
-    private val partyPattern = Pattern.compile("(?:to|at|info:?\\s*upi\\/[^\\/]+\\/)\\s*([a-zA-Z0-9&._ -]{3,30})", Pattern.CASE_INSENSITIVE)
+    // Merchant / Info: "to Yash Singha;" or "to/at <Merchant>"
+    private val partyPattern = Pattern.compile("(?:to|at)\\s+([a-zA-Z0-9&._ -]{3,30}?)(?:;|\n|bal|upi|$)", Pattern.CASE_INSENSITIVE)
 
     override fun parse(title: String?, text: String?): ParsedUpiTransaction? {
         val fullContent = "${title.orEmpty()} ${text.orEmpty()}".trim()

@@ -22,18 +22,16 @@ class BankSmsParser : UpiAppParser {
         return supportedPackages.contains(pkg.lowercase())
     }
 
-    // Debit patterns:
-    // e.g., "Rs 1.00 debited from A/c XX1234", "debited by INR 1.00", "Spent Rs. 150 on ...", "Paid Rs 1 to ..."
+    // Debit patterns (supports "debited ... Rs 1", "debited with INR 1", "Rs 1 debited", etc.):
     private val debitPatterns = listOf(
-        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)\\s*(?:debited|spent|deducted|withdrawn|paid|transferred)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:debited|spent|deducted|withdrawn|paid|sent)\\s*(?:by|for|of)?\\s*(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(?:debited|spent|deducted|withdrawn|paid|sent).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:debited|spent|deducted|withdrawn|paid)", Pattern.CASE_INSENSITIVE)
     )
 
-    // Credit patterns:
-    // e.g., "Rs 100.00 credited to A/c XX1234", "Received Rs 500 from ..."
+    // Credit patterns (supports "credited ... Rs 50", "credited with INR 50", "Rs 50 credited", etc.):
     private val creditPatterns = listOf(
-        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)\\s*(?:credited|deposited|received)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:credited|deposited|received)\\s*(?:by|for|of)?\\s*(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(?:credited|deposited|received).*?(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9]+(?:\\.[0-9]{1,2})?).*?(?:credited|deposited|received)", Pattern.CASE_INSENSITIVE)
     )
 
     // UPI Ref / UTR

@@ -33,9 +33,12 @@ import java.util.*
 class MainActivity : ComponentActivity() {
 
     private val isPermissionGrantedState = mutableStateOf(false)
+    private var initialTabState = mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        initialTabState.intValue = intent?.getIntExtra("OPEN_TAB", 0) ?: 0
 
         // Schedule periodic background sync
         SyncWorker.schedulePeriodic(this)
@@ -45,9 +48,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             ExpenseTrackerApp(
                 isPermissionGranted = isPermissionGrantedState.value,
-                onRefreshPermission = { checkPermission() }
+                onRefreshPermission = { checkPermission() },
+                initialTab = initialTabState.intValue
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        initialTabState.intValue = intent.getIntExtra("OPEN_TAB", 0)
     }
 
     override fun onResume() {
@@ -79,7 +89,8 @@ fun isNotificationAccessGranted(context: android.content.Context): Boolean {
 @Composable
 fun ExpenseTrackerApp(
     isPermissionGranted: Boolean,
-    onRefreshPermission: () -> Unit
+    onRefreshPermission: () -> Unit,
+    initialTab: Int = 0
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -90,7 +101,7 @@ fun ExpenseTrackerApp(
     val pendingTransactions by dao.getPendingReviewTransactions().collectAsState(initial = emptyList())
     val pendingCount by dao.getPendingReviewCount().collectAsState(initial = 0)
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
 
     val totalIncomePaise = transactions.filter { it.type == "income" && it.reviewStatus == "confirmed" }.sumOf { it.amountPaise }
     val totalExpensePaise = transactions.filter { it.type == "expense" && it.reviewStatus == "confirmed" }.sumOf { it.amountPaise }

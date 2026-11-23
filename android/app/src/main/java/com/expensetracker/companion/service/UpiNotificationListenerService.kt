@@ -5,11 +5,13 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.expensetracker.companion.data.local.ExpenseDatabase
 import com.expensetracker.companion.data.local.TransactionEntity
+import com.expensetracker.companion.service.parser.BankSmsParser
 import com.expensetracker.companion.service.parser.GooglePayParser
 import com.expensetracker.companion.service.parser.PaytmParser
 import com.expensetracker.companion.service.parser.PhonePeParser
 import com.expensetracker.companion.service.parser.UpiAppParser
 import com.expensetracker.companion.sync.SyncWorker
+import com.expensetracker.companion.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,7 +24,8 @@ class UpiNotificationListenerService : NotificationListenerService() {
     private val parsers: List<UpiAppParser> = listOf(
         PhonePeParser(),
         GooglePayParser(),
-        PaytmParser()
+        PaytmParser(),
+        BankSmsParser()
     )
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -72,6 +75,13 @@ class UpiNotificationListenerService : NotificationListenerService() {
 
             dao.insert(entity)
             Log.d(TAG, "Saved pending UPI transaction: ${entity.id}")
+
+            // Show immediate heads-up notification so user knows transaction was captured!
+            try {
+                NotificationHelper.showDetectedNotification(applicationContext, entity)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show notification: ${e.message}")
+            }
 
             // Trigger background sync with network constraint
             SyncWorker.enqueue(applicationContext)

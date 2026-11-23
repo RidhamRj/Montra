@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing and development artifacts
+tests/
+test/
+*.log
+*.tmp
+scratch/
+
+# Production builds
+dist/
+build/
+.output/
+
+# Environment and sensitive keys
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# Android build outputs & IDE
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/.idea/
+android/*.iml
+*.apk
+*.aab
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

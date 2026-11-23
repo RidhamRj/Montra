@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Expense Tracker</string>
+    <string name="notification_permission_description">Enable notification listener access so the companion app can automatically detect and log UPI payments from PhonePe, Google Pay, and Paytm without reading private messages.</string>
+</resources>
+

@@ -10,7 +10,8 @@ object SyncPreferences {
     private const val KEY_LAST_SYNC_STATUS = "last_sync_status"
     private const val KEY_LAST_SYNC_TIME = "last_sync_time"
 
-    const val DEFAULT_SUPABASE_URL = "https://oqnlyzdxmtghvmhljrik.supabase.co"
+    const val DEFAULT_SUPABASE_URL = "https://upxsggyqouyidrstouyi.supabase.co"
+    const val DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_GmBN3k5nu04H_yaJn7uq5A_UQYgMp7_"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -25,7 +26,7 @@ object SyncPreferences {
     }
 
     fun getSupabaseAnonKey(context: Context): String {
-        return getPrefs(context).getString(KEY_SUPABASE_ANON_KEY, "") ?: ""
+        return getPrefs(context).getString(KEY_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY) ?: DEFAULT_SUPABASE_ANON_KEY
     }
 
     fun setSupabaseAnonKey(context: Context, key: String) {
@@ -47,3 +48,4 @@ object SyncPreferences {
         return getPrefs(context).getLong(KEY_LAST_SYNC_TIME, 0L)
     }
 }
+

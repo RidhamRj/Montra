@@ -3,15 +3,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export function getStoredSupabaseConfig(): { url: string; key: string } {
   if (typeof window === "undefined") {
     return {
-      url: import.meta.env.VITE_SUPABASE_URL || "https://oqnlyzdxmtghvmhljrik.supabase.co",
-      key: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+      url: import.meta.env.VITE_SUPABASE_URL || "https://upxsggyqouyidrstouyi.supabase.co",
+      key: import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_GmBN3k5nu04H_yaJn7uq5A_UQYgMp7_",
     };
   }
   const storedUrl = localStorage.getItem("rupeetrack_supabase_url");
   const storedKey = localStorage.getItem("rupeetrack_supabase_anon_key");
   return {
-    url: storedUrl || import.meta.env.VITE_SUPABASE_URL || "https://oqnlyzdxmtghvmhljrik.supabase.co",
-    key: storedKey || import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+    url: storedUrl || import.meta.env.VITE_SUPABASE_URL || "https://upxsggyqouyidrstouyi.supabase.co",
+    key: storedKey || import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_GmBN3k5nu04H_yaJn7uq5A_UQYgMp7_",
   };
 }
 
